@@ -1,5 +1,6 @@
 import os
 import ssl
+import socket
 import smtplib
 from email.message import EmailMessage
 from django.shortcuts import render, redirect, get_object_or_404
@@ -10,6 +11,7 @@ from django.contrib import messages
 from .models import EmailDraft
 from .ai_service import generate_email_content
 
+
 def extract_file_content(file_obj):
     try:
         if file_obj.name.endswith(('.txt', '.md', '.csv', '.json', '.log')):
@@ -18,6 +20,34 @@ def extract_file_content(file_obj):
         pass
     return None
 
+
+def force_ipv4_smtp_connect(host, port, use_ssl=True, timeout=10):
+    """
+    Forces Python socket creation to use IPv4 (AF_INET) exclusively.
+    Prevents Render [Errno 101] Network is unreachable IPv6 routing failures.
+    """
+    # Resolve IPv4 address explicitly
+    addr_info = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+    if not addr_info:
+        raise OSError(f"Could not resolve IPv4 address for {host}")
+    
+    ip_address = addr_info[0][4][0]
+
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+
+    if use_ssl:
+        server = smtplib.SMTP_SSL(ip_address, port, context=context, timeout=timeout)
+        # Re-set server hostname for TLS SNI extension validation
+        server.server_hostname = host
+    else:
+        server = smtplib.SMTP(ip_address, port, timeout=timeout)
+        server.starttls(context=context)
+    
+    return server
+
+
 def login_required_custom(view_func):
     def wrapper(request, *args, **kwargs):
         if 'email_user' not in request.session or 'email_pass' not in request.session:
@@ -25,6 +55,7 @@ def login_required_custom(view_func):
             return redirect('smtp_login')
         return view_func(request, *args, **kwargs)
     return wrapper
+
 
 def smtp_login(request):
     if request.method == 'POST':
@@ -35,24 +66,24 @@ def smtp_login(request):
             messages.error(request, "Both Email Address and App Password are required.")
             return render(request, 'mailer/login.html')
 
-        context = ssl.create_default_context()
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-
-        # Try Port 465 (SSL) first, fallback to Port 587 (STARTTLS)
         authenticated = False
+
+        # 1. Try Forced IPv4 over SSL Port 465
         try:
-            with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context, timeout=12) as server:
+            with force_ipv4_smtp_connect('smtp.gmail.com', 465, use_ssl=True, timeout=10) as server:
                 server.login(email_user, email_pass)
                 authenticated = True
+        except smtplib.SMTPAuthenticationError:
+            messages.error(request, "Invalid Credentials: Use your 16-character Google App Password.")
+            return render(request, 'mailer/login.html')
         except Exception:
+            # 2. Fallback: Forced IPv4 over STARTTLS Port 587
             try:
-                with smtplib.SMTP('smtp.gmail.com', 587, timeout=12) as server:
-                    server.starttls(context=context)
+                with force_ipv4_smtp_connect('smtp.gmail.com', 587, use_ssl=False, timeout=10) as server:
                     server.login(email_user, email_pass)
                     authenticated = True
             except smtplib.SMTPAuthenticationError:
-                messages.error(request, "Invalid Credentials: Ensure you are using a 16-character Google App Password.")
+                messages.error(request, "Invalid Credentials: Use your 16-character Google App Password.")
                 return render(request, 'mailer/login.html')
             except Exception as ex:
                 messages.error(request, f"SMTP Connection Error: {str(ex)}")
@@ -66,16 +97,19 @@ def smtp_login(request):
 
     return render(request, 'mailer/login.html')
 
+
 def smtp_logout(request):
     request.session.flush()
     messages.info(request, "Logged out successfully.")
     return redirect('smtp_login')
+
 
 @never_cache
 @login_required_custom
 def dashboard(request):
     emails = EmailDraft.objects.all().order_by('-created_at')
     return render(request, 'mailer/dashboard.html', {'emails': emails})
+
 
 @login_required_custom
 def compose(request):
@@ -121,6 +155,7 @@ def compose(request):
             })
 
     return render(request, 'mailer/compose.html')
+
 
 @never_cache
 @login_required_custom
@@ -187,26 +222,23 @@ def preview(request, draft_id):
                     messages.error(request, f"Attachment Error: {str(e)}")
                     return redirect('preview', draft_id=draft.id)
 
-            context = ssl.create_default_context()
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-
-            # Connection execution using Port 465 SSL socket
             sent_successfully = False
+
+            # 1. Dispatch over Forced IPv4 SSL Port 465
             try:
-                with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context, timeout=12) as server:
+                with force_ipv4_smtp_connect('smtp.gmail.com', 465, use_ssl=True, timeout=10) as server:
                     server.login(sender, password)
                     server.send_message(msg)
                     sent_successfully = True
             except Exception:
+                # 2. Dispatch over Forced IPv4 STARTTLS Port 587
                 try:
-                    with smtplib.SMTP('smtp.gmail.com', 587, timeout=12) as server:
-                        server.starttls(context=context)
+                    with force_ipv4_smtp_connect('smtp.gmail.com', 587, use_ssl=False, timeout=10) as server:
                         server.login(sender, password)
                         server.send_message(msg)
                         sent_successfully = True
                 except Exception as ex:
-                    messages.error(request, f"SMTP Connection Failed: {str(ex)}")
+                    messages.error(request, f"SMTP Connection Error: {str(ex)}")
                     return redirect('preview', draft_id=draft.id)
 
             if sent_successfully:
@@ -220,6 +252,7 @@ def preview(request, draft_id):
     response['Pragma'] = 'no-cache'
     response['Expires'] = '0'
     return response
+
 
 @require_POST
 @login_required_custom
