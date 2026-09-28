@@ -1,0 +1,105 @@
+{% extends 'mailer/base.html' %}
+
+{% block title %}Preview & Edit Email | Mail Buddy{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-8">
+
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/60 pb-6">
+        <div>
+            {% if draft.status == 'sent' %}
+                <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">View Sent Email</h1>
+                <p class="text-sm text-slate-500 mt-1">This email has been sent and is in read-only mode.</p>
+            {% else %}
+                <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">Review & Edit Generated Email</h1>
+                <p class="text-sm text-slate-500 mt-1">Edit the subject line or body text directly in the glass editor below before sending.</p>
+            {% endif %}
+        </div>
+        <a href="{% url 'dashboard' %}" class="px-4 py-2.5 text-xs font-semibold glass-button rounded-xl transition-all">
+            Back to Dashboard
+        </a>
+    </div>
+
+    <form id="emailForm" method="POST" action="{% url 'preview' draft.id %}" class="glass-panel rounded-3xl p-8 space-y-6">
+        {% csrf_token %}
+
+        <!-- Recipient Glass Metadata -->
+        <div class="glass-panel-light rounded-2xl p-5 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs text-slate-600">
+            <div>
+                <span class="block font-bold uppercase text-slate-400 mb-1">Recipient</span>
+                <span class="font-bold text-slate-900 text-sm">{{ draft.receiver_name }}</span>
+                <div class="text-slate-500 text-xs">{{ draft.receiver_email }}</div>
+            </div>
+            <div>
+                <span class="block font-bold uppercase text-slate-400 mb-1">Tone</span>
+                <span class="font-bold text-indigo-700 text-sm">{{ draft.get_tone_display }}</span>
+            </div>
+            <div>
+                <span class="block font-bold uppercase text-slate-400 mb-1">Attachment</span>
+                {% if draft.attachment %}
+                    <span class="font-bold text-emerald-700 text-sm truncate block">{{ draft.filename }}</span>
+                {% else %}
+                    <span class="font-medium text-slate-400 text-sm">None</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Editable Subject Line -->
+        <div>
+            <label for="id_preview_subject" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Subject Line</label>
+            <input type="text" id="id_preview_subject" name="subject" value="{{ draft.subject }}" autocomplete="off" {% if draft.status == 'sent' %}disabled{% else %}required{% endif %}
+                class="w-full text-sm font-semibold glass-input rounded-xl px-4 py-3 focus:outline-none transition-all {% if draft.status == 'sent' %}opacity-75 cursor-not-allowed bg-slate-100/50{% endif %}">
+        </div>
+
+        <!-- Editable Code & Text Editor -->
+        <div>
+            <div class="flex items-center justify-between mb-2">
+                <label for="id_preview_body" class="block text-xs font-bold uppercase tracking-wider text-slate-600">Generated Body</label>
+                {% if draft.status == 'sent' %}
+                    <span class="text-xs text-emerald-700 font-semibold">Sent - Read Only</span>
+                {% else %}
+                    <span class="text-xs text-indigo-600 font-semibold">Direct editing active</span>
+                {% endif %}
+            </div>
+            <textarea id="id_preview_body" name="generated_body" rows="12" autocomplete="off" {% if draft.status == 'sent' %}disabled{% else %}required{% endif %}
+                class="w-full text-sm font-mono glass-input rounded-2xl p-5 focus:outline-none transition-all leading-relaxed text-slate-800 border border-indigo-200/60 {% if draft.status == 'sent' %}opacity-75 cursor-not-allowed bg-slate-100/50{% endif %}">{{ draft.generated_body }}</textarea>
+        </div>
+
+        <!-- Action Controls -->
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-200/60">
+            {% if draft.status == 'sent' %}
+                <span class="inline-flex items-center px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500/10 text-emerald-800 border border-emerald-500/20">
+                    Email Sent
+                </span>
+                <a href="{% url 'dashboard' %}" class="w-full sm:w-auto px-6 py-3 text-xs font-semibold glass-button rounded-xl transition-all text-center">
+                    Return to Dashboard
+                </a>
+            {% else %}
+                <button type="submit" name="recompose" value="1" 
+                    class="w-full sm:w-auto px-6 py-3 text-xs font-semibold text-slate-700 glass-button rounded-xl transition-all">
+                    Regenerate with AI
+                </button>
+                <button type="submit" id="sendBtn" name="send" value="1" onclick="handleSendExecution(event)"
+                    class="w-full sm:w-auto px-8 py-3 text-xs font-semibold glass-button-primary rounded-xl transition-all">
+                    Send Email Now
+                </button>
+            {% endif %}
+        </div>
+    </form>
+
+</div>
+
+<script>
+    function handleSendExecution(event) {
+        // Replace history state immediately before form submission so back button cannot navigate back
+        window.history.replaceState(null, "", "/");
+    }
+
+    // Force page reload on back/forward browser navigation
+    window.addEventListener('pageshow', function(event) {
+        if (event.persisted) {
+            window.location.replace("/");
+        }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,133 @@
+{% extends 'mailer/base.html' %}
+
+{% block title %}Dashboard | Mail Buddy{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200/60">
+        <div>
+            <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">Conversations & Drafts</h1>
+            <p class="text-sm text-slate-500 mt-1">Manage AI-generated email drafts, edit content inline, or send directly.</p>
+        </div>
+        <a href="{% url 'compose' %}" class="inline-flex items-center justify-center glass-button-primary text-sm font-semibold px-5 py-3 rounded-xl transition-all">
+            Compose New Email
+        </a>
+    </div>
+
+    <!-- Glass Table Container -->
+    {% if emails %}
+    <div class="glass-panel rounded-3xl overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+                <thead class="bg-white/40 border-b border-white/60 text-slate-500 text-xs font-bold uppercase tracking-wider">
+                    <tr>
+                        <th class="px-6 py-4">Recipient</th>
+                        <th class="px-6 py-4">Subject & Preview</th>
+                        <th class="px-6 py-4">Tone</th>
+                        <th class="px-6 py-4">Status</th>
+                        <th class="px-6 py-4 text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200/40">
+                    {% for email in emails %}
+                    <tr class="hover:bg-white/40 transition-colors">
+                        <td class="px-6 py-5 font-semibold text-slate-900 whitespace-nowrap">
+                            {{ email.receiver_name }}
+                            <div class="text-xs text-slate-500 font-normal">{{ email.receiver_email }}</div>
+                        </td>
+                        <td class="px-6 py-5 max-w-xs">
+                            <div class="font-semibold text-slate-800 truncate">{{ email.subject|default:"(No Subject)" }}</div>
+                            <div class="text-xs text-slate-500 truncate mt-1">{{ email.generated_body|truncatewords:8 }}</div>
+                        </td>
+                        <td class="px-6 py-5 whitespace-nowrap">
+                            <span class="inline-block px-3 py-1 glass-panel-light rounded-lg text-xs font-semibold text-indigo-700">
+                                {{ email.get_tone_display }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-5 whitespace-nowrap">
+                            {% if email.status == 'sent' %}
+                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-800 border border-emerald-500/20">
+                                    Sent
+                                </span>
+                            {% else %}
+                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-800 border border-amber-500/20">
+                                    Draft
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-5 text-right space-x-2 whitespace-nowrap">
+                            {% if email.status == 'sent' %}
+                                <a href="{% url 'preview' email.id %}" class="inline-block text-xs font-semibold text-slate-500 bg-slate-200/50 px-3.5 py-2 rounded-xl transition-all">
+                                    View
+                                </a>
+                            {% else %}
+                                <a href="{% url 'preview' email.id %}" class="inline-block text-xs font-semibold glass-button px-3.5 py-2 rounded-xl transition-all">
+                                    View / Edit
+                                </a>
+                            {% endif %}
+                            <button onclick="openDeleteModal('{{ email.id }}', '{{ email.receiver_name|escapejs }}')" 
+                                    class="inline-block text-xs font-semibold text-rose-700 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 px-3.5 py-2 rounded-xl transition-all">
+                                Delete
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <div class="glass-panel rounded-3xl p-16 text-center space-y-4">
+        <h3 class="text-xl font-bold text-slate-900">No drafts found</h3>
+        <p class="text-sm text-slate-500 max-w-md mx-auto">Start drafting emails with Gemini AI with custom tone control and document references.</p>
+        <a href="{% url 'compose' %}" class="inline-flex items-center justify-center glass-button-primary text-sm font-semibold px-6 py-3 rounded-xl transition-all">
+            Compose First Draft
+        </a>
+    </div>
+    {% endif %}
+
+</div>
+
+<!-- Light Glass Delete Confirmation Modal -->
+<div id="deleteModal" class="fixed inset-0 z-50 hidden bg-slate-900/30 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="glass-panel-light rounded-3xl max-w-md w-full p-6 space-y-6 shadow-2xl border border-white/80">
+        <div>
+            <h3 class="text-xl font-bold text-slate-900">Are you sure?</h3>
+            <p class="text-sm text-slate-600 mt-2 leading-relaxed">
+                You are about to delete the conversation draft for <span id="modalRecipient" class="font-bold text-indigo-700"></span>. This action cannot be reversed.
+            </p>
+        </div>
+        <div class="flex items-center justify-end gap-3">
+            <button onclick="closeDeleteModal()" class="px-4 py-2.5 text-sm font-semibold glass-button rounded-xl transition-all">
+                Cancel
+            </button>
+            <form id="deleteForm" method="POST" action="">
+                {% csrf_token %}
+                <button type="submit" class="px-5 py-2.5 text-sm font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md shadow-rose-600/20 transition-all">
+                    Yes, Delete
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    function openDeleteModal(draftId, recipientName) {
+        document.getElementById('modalRecipient').innerText = recipientName;
+        document.getElementById('deleteForm').action = '/delete/' + draftId + '/';
+        document.getElementById('deleteModal').classList.remove('hidden');
+    }
+
+    function closeDeleteModal() {
+        document.getElementById('deleteModal').classList.add('hidden');
+    }
+
+    // Prevent going back to the preview/edit screen after sending an email
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('sent') === 'true') {
+        window.history.replaceState(null, "", window.location.pathname);
+    }
+</script>
+{% endblock %}

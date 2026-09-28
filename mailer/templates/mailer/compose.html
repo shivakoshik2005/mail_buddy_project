@@ -1,0 +1,93 @@
+{% extends 'mailer/base.html' %}
+
+{% block title %}Compose Email | Mail Buddy{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-8">
+
+    <div class="border-b border-slate-200/60 pb-6">
+        <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">Compose AI Email</h1>
+        <p class="text-sm text-slate-500 mt-1">Configure recipient details, tone of voice, and reference files for AI drafting.</p>
+    </div>
+
+    <!-- SEO & Autofill Optimized Form -->
+    <form method="POST" action="{% url 'compose' %}" enctype="multipart/form-data" class="glass-panel rounded-3xl p-8 space-y-6" itemprop="potentialAction" itemscope itemtype="https://schema.org/CreateAction">
+        {% csrf_token %}
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div>
+                <label for="id_receiver_name" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Recipient Name *</label>
+                <input type="text" id="id_receiver_name" name="receiver_name" value="{{ receiver_name|default:'' }}" required placeholder="e.g. Sarah Jenkins"
+                    autocomplete="name"
+                    aria-label="Recipient Full Name"
+                    class="w-full text-sm glass-input rounded-xl px-4 py-3 focus:outline-none transition-all">
+            </div>
+            <div>
+                <label for="id_receiver_email" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Recipient Email *</label>
+                <input type="email" id="id_receiver_email" name="receiver_email" value="{{ receiver_email|default:'' }}" required placeholder="e.g. sarah@company.com"
+                    autocomplete="email"
+                    aria-label="Recipient Email Address"
+                    class="w-full text-sm glass-input rounded-xl px-4 py-3 focus:outline-none transition-all">
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div>
+                <label for="id_subject" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Subject Line (Optional)</label>
+                <input type="text" id="id_subject" name="subject" value="{{ subject|default:'' }}" placeholder="Leave empty for AI subject generation"
+                    autocomplete="off"
+                    aria-label="Email Subject Line"
+                    class="w-full text-sm glass-input rounded-xl px-4 py-3 focus:outline-none transition-all">
+            </div>
+            <div>
+                <label for="id_tone" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Tone of Voice *</label>
+                <select id="id_tone" name="tone" class="w-full text-sm glass-input rounded-xl px-4 py-3 focus:outline-none transition-all">
+                    <option value="professional" {% if tone == 'professional' %}selected{% endif %}>Professional & Formal</option>
+                    <option value="friendly" {% if tone == 'friendly' %}selected{% endif %}>Friendly & Warm</option>
+                    <option value="persuasive" {% if tone == 'persuasive' %}selected{% endif %}>Persuasive & Sales</option>
+                    <option value="concise" {% if tone == 'concise' %}selected{% endif %}>Direct & Concise</option>
+                    <option value="casual" {% if tone == 'casual' %}selected{% endif %}>Casual & Conversational</option>
+                </select>
+            </div>
+        </div>
+
+        <div>
+            <label for="id_description" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Core Purpose & Instructions *</label>
+            <textarea id="id_description" name="description" rows="4" required placeholder="Describe what this email should communicate..."
+                autocomplete="off"
+                aria-label="Email Purpose Instructions"
+                class="w-full text-sm glass-input rounded-xl px-4 py-3 focus:outline-none transition-all leading-relaxed">{{ description|default:'' }}</textarea>
+        </div>
+
+        <!-- Document Attachment Upload -->
+        <div>
+            <label for="file-upload" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Attach Reference Document (Optional)</label>
+            <div class="border-2 border-dashed border-indigo-200/60 rounded-2xl p-6 bg-white/40 hover:bg-white/70 transition-colors text-center cursor-pointer" onclick="document.getElementById('file-upload').click()">
+                <input id="file-upload" name="attachment" type="file" class="hidden" onchange="updateFileName(this)">
+                <p class="text-sm font-semibold text-slate-700">Click to upload or drag reference files</p>
+                <p class="text-xs text-slate-400 mt-1">TXT, LOG, CSV up to 10MB</p>
+                <p id="file-name-display" class="text-xs font-bold text-indigo-600 mt-3 hidden"></p>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-4 pt-4 border-t border-slate-200/60">
+            <a href="{% url 'dashboard' %}" class="px-5 py-3 text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors">Cancel</a>
+            <button type="submit" class="glass-button-primary text-sm font-semibold px-8 py-3 rounded-xl transition-all">
+                Generate Draft
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+    function updateFileName(input) {
+        const display = document.getElementById('file-name-display');
+        if (input.files && input.files[0]) {
+            display.innerText = "Attached: " + input.files[0].name;
+            display.classList.remove('hidden');
+        } else {
+            display.classList.add('hidden');
+        }
+    }
+</script>
+{% endblock %}

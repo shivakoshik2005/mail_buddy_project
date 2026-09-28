@@ -1,0 +1,37 @@
+{% extends 'mailer/base.html' %}
+
+{% block title %}Setup Credentials | Mail Buddy{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto space-y-8 pt-6">
+
+    <div class="text-center space-y-2">
+        <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">Configure Sender Mail</h1>
+        <p class="text-sm text-slate-500">Enter your Gmail address and 16-character App Password to start sending AI emails.</p>
+    </div>
+
+    <form method="POST" action="{% url 'smtp_login' %}" class="glass-panel rounded-3xl p-8 space-y-6">
+        {% csrf_token %}
+
+        <div>
+            <label for="id_email_user" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Gmail Address *</label>
+            <input type="email" id="id_email_user" name="email_user" required placeholder="your.email@gmail.com"
+                autocomplete="email"
+                class="w-full text-sm glass-input rounded-xl px-4 py-3 focus:outline-none transition-all">
+        </div>
+
+        <div>
+            <label for="id_email_pass" class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Google App Password *</label>
+            <input type="password" id="id_email_pass" name="email_pass" required placeholder="16-character passcode"
+                autocomplete="current-password"
+                class="w-full text-sm glass-input rounded-xl px-4 py-3 focus:outline-none transition-all">
+            <p class="text-xs text-slate-400 mt-2">Generate via Google Account → Security → App Passwords.</p>
+        </div>
+
+        <button type="submit" class="w-full glass-button-primary text-sm font-semibold py-3 rounded-xl transition-all">
+            Authenticate & Proceed
+        </button>
+    </form>
+
+</div>
+{% endblock %}
