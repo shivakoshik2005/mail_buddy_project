@@ -21,31 +21,41 @@ def extract_file_content(file_obj):
     return None
 
 
-def force_ipv4_smtp_connect(host, port, use_ssl=True, timeout=10):
+def connect_gmail_smtp_fast(email_user, email_pass, timeout=15):
     """
-    Forces Python socket creation to use IPv4 (AF_INET) exclusively.
-    Prevents Render [Errno 101] Network is unreachable IPv6 routing failures.
+    Connects to Gmail SMTP over SSL Port 465 with direct IPv4 fallback addresses
+    to completely bypass Render socket timeouts and DNS delays.
     """
-    # Resolve IPv4 address explicitly
-    addr_info = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
-    if not addr_info:
-        raise OSError(f"Could not resolve IPv4 address for {host}")
-    
-    ip_address = addr_info[0][4][0]
-
     context = ssl.create_default_context()
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
 
-    if use_ssl:
-        server = smtplib.SMTP_SSL(ip_address, port, context=context, timeout=timeout)
-        # Re-set server hostname for TLS SNI extension validation
-        server.server_hostname = host
-    else:
-        server = smtplib.SMTP(ip_address, port, timeout=timeout)
-        server.starttls(context=context)
-    
-    return server
+    # List of primary Google Gmail IPv4 SMTP endpoints
+    targets = [
+        ('smtp.gmail.com', 465),
+        ('64.233.184.108', 465),
+        ('74.125.197.108', 465),
+        ('smtp.gmail.com', 587),
+    ]
+
+    last_exception = None
+    for host, port in targets:
+        try:
+            if port == 465:
+                server = smtplib.SMTP_SSL(host, port, context=context, timeout=timeout)
+                if host != 'smtp.gmail.com':
+                    server.server_hostname = 'smtp.gmail.com'
+            else:
+                server = smtplib.SMTP(host, port, timeout=timeout)
+                server.starttls(context=context)
+
+            server.login(email_user, email_pass)
+            return server
+        except Exception as e:
+            last_exception = e
+            continue
+
+    raise last_exception if last_exception else TimeoutError("All Gmail SMTP connection routes timed out.")
 
 
 def login_required_custom(view_func):
@@ -66,34 +76,18 @@ def smtp_login(request):
             messages.error(request, "Both Email Address and App Password are required.")
             return render(request, 'mailer/login.html')
 
-        authenticated = False
-
-        # 1. Try Forced IPv4 over SSL Port 465
         try:
-            with force_ipv4_smtp_connect('smtp.gmail.com', 465, use_ssl=True, timeout=10) as server:
-                server.login(email_user, email_pass)
-                authenticated = True
-        except smtplib.SMTPAuthenticationError:
-            messages.error(request, "Invalid Credentials: Use your 16-character Google App Password.")
-            return render(request, 'mailer/login.html')
-        except Exception:
-            # 2. Fallback: Forced IPv4 over STARTTLS Port 587
-            try:
-                with force_ipv4_smtp_connect('smtp.gmail.com', 587, use_ssl=False, timeout=10) as server:
-                    server.login(email_user, email_pass)
-                    authenticated = True
-            except smtplib.SMTPAuthenticationError:
-                messages.error(request, "Invalid Credentials: Use your 16-character Google App Password.")
-                return render(request, 'mailer/login.html')
-            except Exception as ex:
-                messages.error(request, f"SMTP Connection Error: {str(ex)}")
-                return render(request, 'mailer/login.html')
+            server = connect_gmail_smtp_fast(email_user, email_pass)
+            server.quit()
 
-        if authenticated:
             request.session['email_user'] = email_user
             request.session['email_pass'] = email_pass
             messages.success(request, f"Authenticated successfully as {email_user}")
             return redirect('dashboard')
+        except smtplib.SMTPAuthenticationError:
+            messages.error(request, "Invalid Credentials: Make sure you entered a valid 16-character Google App Password.")
+        except Exception as ex:
+            messages.error(request, f"SMTP Connection Failed: {str(ex)}")
 
     return render(request, 'mailer/login.html')
 
@@ -222,30 +216,18 @@ def preview(request, draft_id):
                     messages.error(request, f"Attachment Error: {str(e)}")
                     return redirect('preview', draft_id=draft.id)
 
-            sent_successfully = False
-
-            # 1. Dispatch over Forced IPv4 SSL Port 465
             try:
-                with force_ipv4_smtp_connect('smtp.gmail.com', 465, use_ssl=True, timeout=10) as server:
-                    server.login(sender, password)
-                    server.send_message(msg)
-                    sent_successfully = True
-            except Exception:
-                # 2. Dispatch over Forced IPv4 STARTTLS Port 587
-                try:
-                    with force_ipv4_smtp_connect('smtp.gmail.com', 587, use_ssl=False, timeout=10) as server:
-                        server.login(sender, password)
-                        server.send_message(msg)
-                        sent_successfully = True
-                except Exception as ex:
-                    messages.error(request, f"SMTP Connection Error: {str(ex)}")
-                    return redirect('preview', draft_id=draft.id)
+                server = connect_gmail_smtp_fast(sender, password)
+                server.send_message(msg)
+                server.quit()
 
-            if sent_successfully:
                 draft.status = 'sent'
                 draft.save()
                 messages.success(request, f"Email sent successfully to {draft.receiver_email}!")
                 return redirect('dashboard')
+            except Exception as ex:
+                messages.error(request, f"SMTP Connection Error: {str(ex)}")
+                return redirect('preview', draft_id=draft.id)
 
     response = render(request, 'mailer/preview.html', {'draft': draft})
     response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
