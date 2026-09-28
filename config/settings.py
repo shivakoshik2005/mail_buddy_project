@@ -5,13 +5,20 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
-# Fallback Secret Key for session signing in production
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-mail-buddy-key-production-fallback-38492042')
+# Fallback SECRET_KEY to prevent session initialization crashes
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-production-fallback-key-984210384729')
 
 DEBUG = False
 
-# Allow all Render subdomains and localhost
+# Host & CSRF Security Boundaries for Render Deployment
 ALLOWED_HOSTS = ['*']
+
+CSRF_TRUSTED_ORIGINS = [
+    'https://*.onrender.com',
+    'https://mail-buddy-project.onrender.com',
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -69,5 +76,8 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

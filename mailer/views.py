@@ -19,7 +19,6 @@ def extract_file_content(file_obj):
     return None
 
 def login_required_custom(view_func):
-    """Custom decorator ensuring user configured SMTP session credentials."""
     def wrapper(request, *args, **kwargs):
         if 'email_user' not in request.session or 'email_pass' not in request.session:
             messages.info(request, "Please enter your Gmail credentials to access Mail Buddy.")
@@ -28,33 +27,36 @@ def login_required_custom(view_func):
     return wrapper
 
 def smtp_login(request):
-    """Initial setup screen to dynamically authenticate user's Gmail credentials."""
     if request.method == 'POST':
         email_user = request.POST.get('email_user', '').strip()
         email_pass = request.POST.get('email_pass', '').strip().replace(' ', '')
 
-        # Test SMTP Connection instantly before accepting credentials
+        if not email_user or not email_pass:
+            messages.error(request, "Both Email Address and App Password are required.")
+            return render(request, 'mailer/login.html')
+
         context = ssl.create_default_context()
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
 
         try:
-            with smtplib.SMTP('smtp.gmail.com', 587) as server:
+            with smtplib.SMTP('smtp.gmail.com', 587, timeout=12) as server:
                 server.starttls(context=context)
                 server.login(email_user, email_pass)
 
-            # Store credentials safely in secure session storage
+            # Store validated credentials in session
             request.session['email_user'] = email_user
             request.session['email_pass'] = email_pass
-            messages.success(request, f"Successfully authenticated as {email_user}!")
+            messages.success(request, f"Authenticated successfully as {email_user}")
             return redirect('dashboard')
+        except smtplib.SMTPAuthenticationError:
+            messages.error(request, "Invalid Credentials: Use your 16-character Google App Password (not your personal password).")
         except Exception as e:
-            messages.error(request, f"Authentication Failed: {str(e)}. Please check your App Password.")
+            messages.error(request, f"SMTP Connection Failed: {str(e)}")
 
     return render(request, 'mailer/login.html')
 
 def smtp_logout(request):
-    """Clear credentials from session."""
     request.session.flush()
     messages.info(request, "Logged out successfully.")
     return redirect('smtp_login')
@@ -156,7 +158,6 @@ def preview(request, draft_id):
             return redirect('preview', draft_id=draft.id)
 
         elif 'send' in request.POST:
-            # Dynamically retrieve session credentials entered during initial login
             sender = request.session.get('email_user')
             password = request.session.get('email_pass')
 
@@ -181,7 +182,7 @@ def preview(request, draft_id):
             context.verify_mode = ssl.CERT_NONE
 
             try:
-                with smtplib.SMTP('smtp.gmail.com', 587) as server:
+                with smtplib.SMTP('smtp.gmail.com', 587, timeout=12) as server:
                     server.starttls(context=context)
                     server.login(sender, password)
                     server.send_message(msg)
