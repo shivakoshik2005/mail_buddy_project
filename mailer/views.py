@@ -39,20 +39,30 @@ def smtp_login(request):
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
 
+        # Try Port 465 (SSL) first, fallback to Port 587 (STARTTLS)
+        authenticated = False
         try:
-            with smtplib.SMTP('smtp.gmail.com', 587, timeout=12) as server:
-                server.starttls(context=context)
+            with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context, timeout=12) as server:
                 server.login(email_user, email_pass)
+                authenticated = True
+        except Exception:
+            try:
+                with smtplib.SMTP('smtp.gmail.com', 587, timeout=12) as server:
+                    server.starttls(context=context)
+                    server.login(email_user, email_pass)
+                    authenticated = True
+            except smtplib.SMTPAuthenticationError:
+                messages.error(request, "Invalid Credentials: Ensure you are using a 16-character Google App Password.")
+                return render(request, 'mailer/login.html')
+            except Exception as ex:
+                messages.error(request, f"SMTP Connection Error: {str(ex)}")
+                return render(request, 'mailer/login.html')
 
-            # Store validated credentials in session
+        if authenticated:
             request.session['email_user'] = email_user
             request.session['email_pass'] = email_pass
             messages.success(request, f"Authenticated successfully as {email_user}")
             return redirect('dashboard')
-        except smtplib.SMTPAuthenticationError:
-            messages.error(request, "Invalid Credentials: Use your 16-character Google App Password (not your personal password).")
-        except Exception as e:
-            messages.error(request, f"SMTP Connection Failed: {str(e)}")
 
     return render(request, 'mailer/login.html')
 
@@ -181,19 +191,29 @@ def preview(request, draft_id):
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
 
+            # Connection execution using Port 465 SSL socket
+            sent_successfully = False
             try:
-                with smtplib.SMTP('smtp.gmail.com', 587, timeout=12) as server:
-                    server.starttls(context=context)
+                with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context, timeout=12) as server:
                     server.login(sender, password)
                     server.send_message(msg)
+                    sent_successfully = True
+            except Exception:
+                try:
+                    with smtplib.SMTP('smtp.gmail.com', 587, timeout=12) as server:
+                        server.starttls(context=context)
+                        server.login(sender, password)
+                        server.send_message(msg)
+                        sent_successfully = True
+                except Exception as ex:
+                    messages.error(request, f"SMTP Connection Failed: {str(ex)}")
+                    return redirect('preview', draft_id=draft.id)
 
+            if sent_successfully:
                 draft.status = 'sent'
                 draft.save()
                 messages.success(request, f"Email sent successfully to {draft.receiver_email}!")
                 return redirect('dashboard')
-            except Exception as e:
-                messages.error(request, f"SMTP Connection Error: {str(e)}")
-                return redirect('preview', draft_id=draft.id)
 
     response = render(request, 'mailer/preview.html', {'draft': draft})
     response['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
